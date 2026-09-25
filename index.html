@@ -17,6 +17,7 @@
   :root{ --bg:#F4F5F7; --panel:#FFFFFF; --line:#D9DDE5; --ink:#1B2230; --muted:#667085; --sub:#1B2230; --api:#3B5BDB; }
 }
 *,*::before,*::after{box-sizing:inherit}
+[hidden]{display:none !important}
 html,body{height:100%;margin:0}
 body{background:var(--bg);color:var(--ink);font-family:var(--cjk);display:flex;flex-direction:column}
 
@@ -127,11 +128,19 @@ body.pip .empty ul{display:none}
 <dialog id="apiDlg">
   <form method="dialog" class="dlg" id="apiForm">
     <h2>API 设置</h2>
-    <p class="hint">API 版用 OpenAI 的实时语音识别（gpt-live-transcribe），比免费版准很多，专业词也认得更好。按用量付费，识别约 $0.017/分钟，一节 90 分钟的课大约 $1.5，翻译另计（通常很少）。</p>
+    <p class="hint">API 版用 OpenAI 的语音识别，比免费版准很多，专业词也认得更好。按用量付费，右上角会实时显示本次大概花了多少钱。</p>
     <p class="hint">Key 只保存在你自己的浏览器里，页面直接连 OpenAI / Anthropic，不经过任何其他服务器。ChatGPT / Claude 会员不包含 API，需要到 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a> 和 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> 单独充值并创建 Key。</p>
 
     <label class="field"><span>OpenAI API Key（必填，用于语音识别）</span>
       <input type="password" id="openaiKey" autocomplete="off" spellcheck="false" placeholder="sk-...">
+    </label>
+
+    <label class="field"><span>识别模型</span>
+      <select id="sttModel">
+        <option value="gpt-live-transcribe">实时：边说边出字（约 $0.017/分钟，90 分钟约 $1.5）</option>
+        <option value="gpt-transcribe">省钱：一句说完才出字（约 $0.0045/分钟，90 分钟约 $0.4）</option>
+        <option value="gpt-4o-mini-transcribe">最省：一句说完才出字，略不准（约 $0.003/分钟）</option>
+      </select>
     </label>
 
     <div class="row">
@@ -143,7 +152,7 @@ body.pip .empty ul{display:none}
         </select>
       </label>
       <label class="field"><span>翻译模型</span>
-        <input type="text" id="trModel" spellcheck="false">
+        <select id="trModel"></select>
       </label>
     </div>
 
@@ -190,31 +199,50 @@ const store = {
 };
 
 /* ---------- API 设置 ---------- */
-const DEFAULT_MODEL = { openai: 'gpt-6-sol', claude: 'claude-sonnet-5', free: '' };
+// 价格：美元 / 百万 token（输入, 输出）；识别：美元 / 分钟。以官方价格为准，这里只用来估算。
+const TR_MODELS = {
+  openai: [['gpt-6-luna', '省钱：gpt-6-luna（推荐）'], ['gpt-6-sol', '更准：gpt-6-sol（约贵 20 倍）']],
+  claude: [['claude-haiku-4-5', '省钱：Claude Haiku 4.5'], ['claude-sonnet-5', '更准：Claude Sonnet 5']],
+  free: [['', '（不需要）']],
+};
+const TOKEN_PRICE = { 'gpt-6-luna': [0.10, 0.50], 'gpt-6-sol': [2, 10], 'claude-haiku-4-5': [1, 5], 'claude-sonnet-5': [2, 10] };
+const STT_PRICE = { 'gpt-live-transcribe': 0.017, 'gpt-transcribe': 0.0045, 'gpt-4o-mini-transcribe': 0.003 };
+
 const cfg = {
   openaiKey: store.get('openaiKey', ''),
   claudeKey: store.get('claudeKey', ''),
+  sttModel: store.get('sttModel', 'gpt-live-transcribe'),
   trEngine: store.get('trEngine', 'openai'),
   trModel: store.get('trModel', ''),
   topic: store.get('topic', ''),
   keywords: store.get('keywords', ''),
   remember: store.get('remember', '1') === '1',
 };
-function modelFor(engine){ return (cfg.trEngine === engine && cfg.trModel) ? cfg.trModel : DEFAULT_MODEL[engine]; }
-
-function syncDlgVisibility(){
-  const e = $('trEngine').value;
-  $('claudeKeyField').hidden = e !== 'claude';
-  $('trModel').disabled = e === 'free';
-  $('trModel').placeholder = DEFAULT_MODEL[e] || '（不需要）';
+if (!STT_PRICE[cfg.sttModel]) cfg.sttModel = 'gpt-live-transcribe';
+function modelFor(engine){
+  const list = TR_MODELS[engine].map(m => m[0]);
+  return (cfg.trEngine === engine && list.includes(cfg.trModel)) ? cfg.trModel : list[0];
 }
-$('trEngine').onchange = () => { $('trModel').value = ''; syncDlgVisibility(); };
+
+function fillModelOptions(engine, selected){
+  const sel = $('trModel');
+  sel.innerHTML = '';
+  for (const [v, label] of TR_MODELS[engine]) sel.add(new Option(label, v));
+  const vals = TR_MODELS[engine].map(m => m[0]);
+  sel.value = vals.includes(selected) ? selected : vals[0];
+  sel.disabled = engine === 'free';
+}
+function syncDlgVisibility(){
+  $('claudeKeyField').hidden = $('trEngine').value !== 'claude';
+}
+$('trEngine').onchange = () => { fillModelOptions($('trEngine').value, ''); syncDlgVisibility(); };
 
 function openSettings(){
   $('openaiKey').value = cfg.openaiKey;
   $('claudeKey').value = cfg.claudeKey;
+  $('sttModel').value = cfg.sttModel;
   $('trEngine').value = cfg.trEngine;
-  $('trModel').value = cfg.trModel;
+  fillModelOptions(cfg.trEngine, cfg.trModel);
   $('topic').value = cfg.topic;
   $('keywords').value = cfg.keywords;
   $('remember').checked = cfg.remember;
@@ -223,18 +251,23 @@ function openSettings(){
 }
 $('apiDlg').addEventListener('close', () => {
   if ($('apiDlg').returnValue !== 'save') return;
+  const sttChanged = cfg.sttModel !== $('sttModel').value;
   cfg.openaiKey = $('openaiKey').value.trim();
   cfg.claudeKey = $('claudeKey').value.trim();
+  cfg.sttModel = $('sttModel').value;
   cfg.trEngine = $('trEngine').value;
-  cfg.trModel = $('trModel').value.trim();
+  cfg.trModel = $('trModel').value;
   cfg.topic = $('topic').value.trim();
   cfg.keywords = $('keywords').value.trim();
   cfg.remember = $('remember').checked;
-  const keys = ['openaiKey','claudeKey','trEngine','trModel','topic','keywords'];
+  const keys = ['openaiKey','claudeKey','sttModel','trEngine','trModel','topic','keywords'];
   if (cfg.remember) keys.forEach(k => store.set(k, cfg[k]));
   else keys.forEach(k => store.del(k));
   store.set('remember', cfg.remember ? '1' : '0');
-  if (!running) setStatus(cfg.openaiKey ? 'API 设置已保存' : '未开始');
+  if (running && mode() === 'api') {
+    if (sttChanged) { commit(); api.sttModel = cfg.sttModel; reconnect('正在切换识别模型…'); }
+    else setStatus(apiStatusText(), true);
+  } else setStatus(cfg.openaiKey ? 'API 设置已保存' : '未开始');
 });
 $('settingsBtn').onclick = openSettings;
 
@@ -300,14 +333,14 @@ function buildPrompt(obj){
   const prev = lines.slice(Math.max(0, (idx < 0 ? lines.length : idx) - 4), idx < 0 ? lines.length : idx)
     .filter(l => l.en && l.zh);
   const system =
-    '你是大学课堂的同声传译。把老师刚说的一句英语翻成自然、准确的简体中文。\n' +
-    '要求：只输出译文，不要解释、不要引号；英文来自语音识别，可能有错字或断句不完整，请按上下文推断老师的本意来翻；' +
+    '你是大学课堂的同声传译。把老师刚说的一段英语翻成自然、通顺、准确的简体中文。\n' +
+    '要求：只输出译文，不要解释、不要引号；英文来自语音识别，可能有错字、断句不完整或句号加错的地方，请按上下文推断老师的本意，翻成连贯的中文，不要逐个短语生硬拼接；' +
     '专业术语译法要准确并前后一致，不常见的术语可在中文后用括号保留英文；人名保留英文。' +
     (cfg.topic ? '\n这门课：' + cfg.topic : '') +
     (cfg.keywords ? '\n课程常用词：' + cfg.keywords : '');
   let user = '';
   if (prev.length) user += '前文（仅供参考，不要翻译）：\n' + prev.map(l => l.en + '\n→ ' + l.zh).join('\n') + '\n\n';
-  user += '要翻译的句子：\n' + obj.en;
+  user += '要翻译的内容：\n' + obj.en;
   return { system, user };
 }
 
@@ -320,6 +353,7 @@ async function translateOpenAI(obj){
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || ('HTTP ' + r.status));
+  addTokenCost(j.model || modelFor('openai'), j.usage?.prompt_tokens, j.usage?.completion_tokens);
   return (j.choices?.[0]?.message?.content || '').trim();
 }
 
@@ -337,7 +371,26 @@ async function translateClaude(obj){
   });
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(j.error?.message || ('HTTP ' + r.status));
+  addTokenCost(modelFor('claude'), j.usage?.input_tokens, j.usage?.output_tokens);
   return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
+}
+
+/* ---------- 费用估算 ---------- */
+const cost = { sttMs: 0, sttUsd: 0, trUsd: 0 };
+function addTokenCost(model, inTok, outTok){
+  const key = Object.keys(TOKEN_PRICE).find(k => (model || '').startsWith(k));
+  if (!key) return;
+  const [pi, po] = TOKEN_PRICE[key];
+  cost.trUsd += ((inTok || 0) * pi + (outTok || 0) * po) / 1e6;
+  updateCost();
+}
+function updateCost(final){
+  if (cost.sttMs === 0 && cost.trUsd === 0) return;
+  const min = cost.sttMs / 60000;
+  const total = cost.sttUsd + cost.trUsd;
+  $('costBadge').hidden = false;
+  $('costBadge').textContent = `${final ? '本次 ' : ''}${min < 10 ? min.toFixed(1) : min.toFixed(0)} 分钟 · 约 $${total.toFixed(total < 0.1 ? 3 : 2)}`;
+  $('costBadge').title = `识别约 $${cost.sttUsd.toFixed(3)}，翻译约 $${cost.trUsd.toFixed(3)}（按官方价格估算，以账单为准）`;
 }
 
 let llmWarned = false;
@@ -403,6 +456,7 @@ function finalizeLine(obj, text){
   clearTimeout(obj.draftTimer);
   obj.en = text.trim();
   obj.final = true;
+  obj.finalAt = Date.now();
   obj.el.classList.remove('live');
   if (!obj.en) { obj.el.remove(); return; }
   renderEn(obj);
@@ -475,7 +529,6 @@ function stopFree(){
 
 /* ================= API 版：OpenAI 实时转写 ================= */
 const RT_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
-const RT_MODEL = 'gpt-live-transcribe';
 const CHUNK_MS = 100;                  // 每 100ms 发一次音频
 const SESSION_MAX_MS = 55 * 60 * 1000; // 官方单次会话上限 60 分钟，提前换新连接
 
@@ -509,10 +562,17 @@ function b64(buf){
 }
 
 function sessionConfig(){
-  const transcription = { model: RT_MODEL, languages: ['en'], delay: 'low' };
   const kw = cfg.keywords.split(/[,，;；\n]/).map(s => s.trim().replace(/[<>\r\n]/g, '')).filter(Boolean).slice(0, 100);
-  if (kw.length) transcription.keywords = kw;
-  transcription.prompt = 'A live university lecture in English' + (cfg.topic ? ' — course: ' + cfg.topic.replace(/[<>\r\n]/g, ' ') : '') + '.';
+  const prompt = 'A live university lecture in English' + (cfg.topic ? ' — course: ' + cfg.topic.replace(/[<>\r\n]/g, ' ') : '') + '.';
+  let transcription;
+  if (cfg.sttModel === 'gpt-live-transcribe') {
+    transcription = { model: cfg.sttModel, languages: ['en'], delay: 'low', prompt };
+    if (kw.length) transcription.keywords = kw;
+  } else {
+    // 非流式模型：一段说完（提交）后才返回结果；专业词写进 prompt
+    transcription = { model: cfg.sttModel, language: 'en',
+      prompt: prompt + (kw.length ? ' Technical terms that may appear: ' + kw.join(', ') + '.' : '') };
+  }
   return {
     type: 'session.update',
     session: {
@@ -549,10 +609,63 @@ function openSocket(){
   });
 }
 
+/* ---- 把被停顿切碎的短句接回上一行 ---- */
+const words = t => t.trim().split(/\s+/).filter(Boolean).length;
+function joinText(a, b){
+  b = (b || '').trim();
+  if (!b) return a;
+  if (/[.?!,;:]["')\]]?$/.test(a)) return a + ' ' + b;
+  if (/^(?!I\b|I')[A-Z]/.test(b)) return a + '. ' + b;       // 上一段没标点、这段大写开头：多半是新短句
+  return a + ' ' + b;                                         // 小写开头：是上一句没说完的部分
+}
+function mergeTarget(){
+  const prev = lines[lines.length - 1];
+  if (!prev || !prev.final || prev.merging) return null;
+  const lastLine = [...stage.querySelectorAll('.line')].pop();
+  if (lastLine !== prev.el) return null;                      // 中间还有别的行
+  if (Date.now() - (prev.finalAt || 0) > 10000) return null;  // 停顿太久，算新的一段
+  const n = words(prev.en);
+  if (n >= 45) return null;                                   // 已经够长了，另起一行
+  const unfinished = !/[.?!]["')\]]?$/.test(prev.en);        // 上一段话没说完
+  return (unfinished || n < 6) ? prev : null;
+}
 function lineFor(sock, id){
   let obj = sock.items.get(id);
-  if (!obj) { obj = makeLine(); obj.text = ''; sock.items.set(id, obj); }
+  if (!obj) {
+    const target = mergeTarget();
+    if (target) {
+      target.merging = true;
+      target.el.classList.add('live');
+      obj = { merge: true, target, base: target.en, text: '', final: false };
+    } else {
+      obj = makeLine(); obj.text = '';
+    }
+    sock.items.set(id, obj);
+  }
   return obj;
+}
+function itemDelta(obj, delta){
+  obj.text += delta;
+  if (!obj.merge) { if (obj.text.trim()) updateLive(obj, obj.text.trim()); return; }
+  const stick = nearBottom();
+  obj.target.en = joinText(obj.base, obj.text);
+  renderEn(obj.target);
+  scrollDown(stick);
+}
+function itemComplete(obj, transcript){
+  if (obj.final) return;
+  const text = (transcript ?? obj.text ?? '').trim();
+  if (!obj.merge) { finalizeLine(obj, text); return; }
+  obj.final = true;
+  const t = obj.target;
+  const stick = nearBottom();
+  t.merging = false;
+  t.finalAt = Date.now();
+  t.el.classList.remove('live');
+  t.en = joinText(obj.base, text);
+  renderEn(t);
+  if (t.en !== obj.base) fillZh(t, false);                    // 整段重新翻译，译文更连贯
+  scrollDown(stick);
 }
 
 function onRtEvent(sock, ev){
@@ -562,19 +675,20 @@ function onRtEvent(sock, ev){
       if (!m.delta) break;
       const obj = lineFor(sock, m.item_id);
       if (obj.final) break;
-      obj.text += m.delta;
-      if (obj.text.trim()) updateLive(obj, obj.text.trim());
+      itemDelta(obj, m.delta);
       break;
     }
     case 'conversation.item.input_audio_transcription.completed': {
-      const obj = lineFor(sock, m.item_id);
-      if (obj.final) break;
-      finalizeLine(obj, m.transcript ?? obj.text);
+      const obj = sock.items.get(m.item_id) || (m.transcript?.trim() ? lineFor(sock, m.item_id) : null);
+      if (obj) itemComplete(obj, m.transcript);
       break;
     }
-    case 'conversation.item.input_audio_transcription.failed':
+    case 'conversation.item.input_audio_transcription.failed': {
       console.warn('转写失败', m);
+      const obj = sock.items.get(m.item_id);
+      if (obj) itemComplete(obj, obj.text || '');
       break;
+    }
     case 'error': {
       const msg = m.error?.message || '未知错误';
       console.warn('Realtime error', m);
@@ -630,6 +744,8 @@ async function reconnect(msg){
 function onAudioChunk(pcm, rms){
   if (!api) return;
   api.totalMs += CHUNK_MS;
+  cost.sttMs += CHUNK_MS;
+  cost.sttUsd += (STT_PRICE[api.sttModel] || 0) * CHUNK_MS / 60000;
   api.noise = rms < api.noise ? rms : api.noise * 0.995 + rms * 0.005;
   const speaking = rms > Math.max(0.008, api.noise * 2.5);
 
@@ -645,7 +761,7 @@ function onAudioChunk(pcm, rms){
   if (speaking) { api.speechMs += CHUNK_MS; api.silenceMs = 0; }
   else api.silenceMs += CHUNK_MS;
 
-  const pause = api.speechMs >= 400 && api.silenceMs >= 600;
+  const pause = api.speechMs >= 600 && api.silenceMs >= 800;
   const longAndQuiet = api.segMs >= 12000 && !speaking;
   const tooLong = api.segMs >= 20000;
   if (pause || longAndQuiet || tooLong) commit();
@@ -670,13 +786,8 @@ function commit(){
 
 function apiStatusText(){
   const tr = cfg.trEngine === 'claude' ? 'Claude' : cfg.trEngine === 'openai' ? 'GPT' : '免费翻译';
-  return '正在听 · API 版 · 翻译：' + tr;
-}
-function updateCost(){
-  if (!api) return;
-  const min = api.totalMs / 60000;
-  $('costBadge').hidden = false;
-  $('costBadge').textContent = `${min < 10 ? min.toFixed(1) : min.toFixed(0)} 分钟 · 识别约 $${(min * 0.017).toFixed(2)}`;
+  const stt = cfg.sttModel === 'gpt-live-transcribe' ? '实时' : '省钱';
+  return '正在听 · API 版（' + stt + '）· 翻译：' + tr;
 }
 
 async function startApi(){
@@ -713,7 +824,8 @@ async function startApi(){
   src.connect(node); node.connect(mute); mute.connect(ctx.destination);
 
   api = { stream, ctx, node, sock: null, queue: [], segMs: 0, speechMs: 0, silenceMs: 0,
-          noise: 0.01, totalMs: 0, reconnecting: false };
+          noise: 0.01, totalMs: 0, reconnecting: false, sttModel: cfg.sttModel };
+  cost.sttMs = 0; cost.sttUsd = 0; cost.trUsd = 0;
   node.port.onmessage = e => onAudioChunk(e.data.pcm, e.data.rms);
   running = true;
   llmWarned = false;
@@ -742,7 +854,7 @@ function stopApi(){
   }
   const sock = a.sock;
   api = null;
-  updateCostFinal(a);
+  updateCost(true);
   try { a.node.port.onmessage = null; a.node.disconnect(); } catch (_) {}
   try { a.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
   try { a.ctx.close(); } catch (_) {}
@@ -751,13 +863,9 @@ function stopApi(){
     sock.ws.onclose = null;
     setTimeout(() => {
       try { sock.ws.close(); } catch (_) {}
-      for (const obj of sock.items.values()) if (!obj.final) finalizeLine(obj, obj.text || '');
+      for (const obj of sock.items.values()) if (!obj.final) itemComplete(obj, obj.text || '');
     }, 4000);
   }
-}
-function updateCostFinal(a){
-  const min = a.totalMs / 60000;
-  if (min > 0) { $('costBadge').hidden = false; $('costBadge').textContent = `本次 ${min.toFixed(1)} 分钟 · 识别约 $${(min * 0.017).toFixed(2)}`; }
 }
 
 /* ---------- 开始 / 停止 ---------- */
