@@ -7,14 +7,14 @@
 <style id="app-style">
 :root{
   --bg:#1B2230; --panel:#232C3D; --line:#34405A; --ink:#EEF1F6; --muted:#8C97AA;
-  --sub:#F4D35E; --rec:#E5484D; --ok:#5FB3A1;
+  --sub:#F4D35E; --rec:#E5484D; --ok:#5FB3A1; --api:#7AA2F7;
   --zh-size:30px;
   --cjk:"PingFang SC","Microsoft YaHei","Noto Sans SC","Source Han Sans SC",system-ui,sans-serif;
   --lat:"Segoe UI","Helvetica Neue",Arial,system-ui,sans-serif;
   box-sizing:border-box;
 }
 @media (prefers-color-scheme: light){
-  :root{ --bg:#F4F5F7; --panel:#FFFFFF; --line:#D9DDE5; --ink:#1B2230; --muted:#667085; --sub:#1B2230; }
+  :root{ --bg:#F4F5F7; --panel:#FFFFFF; --line:#D9DDE5; --ink:#1B2230; --muted:#667085; --sub:#1B2230; --api:#3B5BDB; }
 }
 *,*::before,*::after{box-sizing:inherit}
 html,body{height:100%;margin:0}
@@ -27,21 +27,24 @@ h1{font-size:18px;font-weight:600;margin:0 8px 0 0;letter-spacing:.02em}
 .dot.on{background:var(--rec);box-shadow:0 0 0 0 rgba(229,72,77,.6);animation:pulse 1.6s infinite}
 @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(229,72,77,0)}100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
 @media (prefers-reduced-motion: reduce){.dot.on{animation:none}}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;border:1px solid var(--api);color:var(--api);white-space:nowrap}
+.badge[hidden]{display:none}
 
 button,select{font:inherit;font-size:14px;color:var(--ink);background:transparent;border:1px solid var(--line);border-radius:8px;padding:7px 12px;cursor:pointer}
 button:hover,select:hover{border-color:var(--muted)}
-button:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
+button:focus-visible,select:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid var(--ok);outline-offset:2px}
 #toggle{background:var(--ok);border-color:var(--ok);color:#10201C;font-weight:600;padding:7px 18px}
 #toggle.stop{background:var(--rec);border-color:var(--rec);color:#fff}
 label.ctl{display:flex;align-items:center;gap:6px;font-size:14px;color:var(--muted)}
 input[type=range]{width:90px;accent-color:var(--ok)}
 select option{color:#1B2230}
+.free-only[hidden],.api-only[hidden]{display:none}
 
 #slot{flex:1;min-height:0;display:flex}
 #stage{flex:1;min-height:0;overflow-y:auto;padding:24px clamp(16px,5vw,64px) 40vh}
 .line{max-width:60em;margin:0 0 22px;opacity:.5;transition:opacity .3s}
 .line:nth-last-child(-n+2){opacity:1}
-.zh{font-size:var(--zh-size);line-height:1.5;color:var(--sub);margin:0;font-weight:500}
+.zh{font-size:var(--zh-size);line-height:1.5;color:var(--sub);margin:0;font-weight:500;min-height:1em}
 .zh.draft{opacity:.7}
 .zh.err{color:var(--rec);font-size:15px}
 .en{font-family:var(--lat);font-size:calc(var(--zh-size)*.55);line-height:1.45;color:var(--muted);margin:4px 0 0}
@@ -51,6 +54,23 @@ select option{color:#1B2230}
 .empty{max-width:34em;margin:8vh auto 0;color:var(--muted);font-size:16px;line-height:1.8}
 .empty strong{color:var(--ink);font-weight:600;display:block;font-size:20px;margin-bottom:8px}
 .empty ul{padding-left:1.2em;margin:12px 0 0}
+
+/* API 设置对话框 */
+dialog{background:var(--panel);color:var(--ink);border:1px solid var(--line);border-radius:12px;padding:0;width:min(560px,calc(100vw - 32px));max-height:calc(100vh - 32px)}
+dialog::backdrop{background:rgba(0,0,0,.5)}
+.dlg{padding:20px 22px;display:flex;flex-direction:column;gap:14px;font-size:14px}
+.dlg h2{margin:0;font-size:18px}
+.dlg p.hint{margin:0;color:var(--muted);line-height:1.6}
+.field{display:flex;flex-direction:column;gap:6px}
+.field>span{color:var(--muted)}
+.field input[type=text],.field input[type=password],.field textarea,.field select{font:inherit;font-size:14px;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:8px 10px;width:100%}
+.field textarea{min-height:64px;resize:vertical}
+.row{display:flex;gap:10px;flex-wrap:wrap}
+.row>.field{flex:1;min-width:180px}
+.check{display:flex;gap:8px;align-items:flex-start;color:var(--muted);line-height:1.5}
+.dlg-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:4px}
+.dlg-actions .primary{background:var(--ok);border-color:var(--ok);color:#10201C;font-weight:600}
+.dlg a{color:var(--api)}
 
 /* 悬浮窗里只显示最近几句 */
 body.pip{background:var(--bg)}
@@ -63,16 +83,28 @@ body.pip .empty ul{display:none}
 <body>
 <header>
   <h1>课堂同传</h1>
-  <div class="status"><span class="dot" id="dot"></span><span id="status">未开始</span></div>
+  <div class="status"><span class="dot" id="dot"></span><span id="status">未开始</span><span class="badge" id="costBadge" hidden></span></div>
+  <select id="mode" title="识别模式">
+    <option value="free">免费版</option>
+    <option value="api">API 版（更准）</option>
+  </select>
   <button id="toggle">开始</button>
   <button id="pipBtn" title="打开一个始终在最前面的小窗口，方便边看课件边看翻译">悬浮窗</button>
   <label class="ctl">字号 <input type="range" id="size" min="18" max="56" value="30"></label>
   <label class="ctl"><input type="checkbox" id="showEn" checked> 显示英文</label>
-  <select id="engine" title="翻译引擎">
+  <select id="accent" class="free-only" title="老师的口音">
+    <option value="en-US">口音：美式</option>
+    <option value="en-GB">口音：英式</option>
+    <option value="en-SG">口音：新加坡</option>
+    <option value="en-IN">口音：印度</option>
+    <option value="en-AU">口音：澳洲</option>
+  </select>
+  <select id="engine" class="free-only" title="翻译引擎">
     <option value="auto">翻译：自动</option>
     <option value="chrome">Chrome 内置（离线）</option>
     <option value="google">Google 在线</option>
   </select>
+  <button id="settingsBtn" class="api-only" hidden>API 设置</button>
   <button id="exportBtn">导出文本</button>
   <button id="clearBtn">清空</button>
 </header>
@@ -84,30 +116,150 @@ body.pip .empty ul{display:none}
       <ul>
         <li>请用 Chrome 打开这个文件（Edge 也能用，但翻译速度可能慢一些）。</li>
         <li>第一次点开始时，浏览器会问能否使用麦克风，选“允许”。</li>
-        <li>语音识别用的是系统默认麦克风，坐近一点效果更好。</li>
+        <li>坐近一点、或用外接麦克风，识别效果会好很多。</li>
+        <li>免费版识别不准时，可以在右上角把口音换成老师的口音，或者切到“API 版”。</li>
         <li>点“悬浮窗”可以让字幕浮在课件上面。</li>
       </ul>
     </div>
   </main>
 </div>
 
+<dialog id="apiDlg">
+  <form method="dialog" class="dlg" id="apiForm">
+    <h2>API 设置</h2>
+    <p class="hint">API 版用 OpenAI 的实时语音识别（gpt-live-transcribe），比免费版准很多，专业词也认得更好。按用量付费，识别约 $0.017/分钟，一节 90 分钟的课大约 $1.5，翻译另计（通常很少）。</p>
+    <p class="hint">Key 只保存在你自己的浏览器里，页面直接连 OpenAI / Anthropic，不经过任何其他服务器。ChatGPT / Claude 会员不包含 API，需要到 <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com</a> 和 <a href="https://console.anthropic.com/settings/keys" target="_blank" rel="noopener">console.anthropic.com</a> 单独充值并创建 Key。</p>
+
+    <label class="field"><span>OpenAI API Key（必填，用于语音识别）</span>
+      <input type="password" id="openaiKey" autocomplete="off" spellcheck="false" placeholder="sk-...">
+    </label>
+
+    <div class="row">
+      <label class="field"><span>翻译用</span>
+        <select id="trEngine">
+          <option value="openai">GPT（同一个 OpenAI Key）</option>
+          <option value="claude">Claude（需要 Claude Key）</option>
+          <option value="free">免费翻译（Chrome / Google）</option>
+        </select>
+      </label>
+      <label class="field"><span>翻译模型</span>
+        <input type="text" id="trModel" spellcheck="false">
+      </label>
+    </div>
+
+    <label class="field" id="claudeKeyField"><span>Claude API Key</span>
+      <input type="password" id="claudeKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-...">
+    </label>
+
+    <label class="field"><span>这门课是讲什么的（可选，帮助识别和翻译）</span>
+      <input type="text" id="topic" placeholder="例如：Introduction to Sociology，社会学导论">
+    </label>
+    <label class="field"><span>专业词 / 人名（可选，用逗号分开，识别会更准）</span>
+      <textarea id="keywords" placeholder="例如：Durkheim, anomie, social stratification, Weber"></textarea>
+    </label>
+
+    <label class="check"><input type="checkbox" id="remember" checked> 在这台电脑上记住这些设置（只存在本机浏览器里；公用电脑请取消勾选）</label>
+
+    <div class="dlg-actions">
+      <button value="cancel" formnovalidate>取消</button>
+      <button value="save" class="primary" id="saveBtn">保存</button>
+    </div>
+  </form>
+</dialog>
+
 <script>
 const $ = id => document.getElementById(id);
 const stage = $('stage'), slot = $('slot');
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 
-let rec = null, running = false, translator = null, engineUsed = 'google';
-let current = null, draftTimer = null, wakeLock = null, pipWin = null;
+let running = false, translator = null, engineUsed = 'google';
+let wakeLock = null, pipWin = null;
 const lines = [];
 
 function setStatus(text, on){
   $('status').textContent = text;
   $('dot').classList.toggle('on', !!on);
 }
+const mode = () => $('mode').value;
 
-/* ---------- 翻译 ---------- */
+/* ---------- 本地存储（失败也不影响使用） ---------- */
+const store = {
+  get(k, d){ try { const v = localStorage.getItem('llt.' + k); return v === null ? d : v; } catch (_) { return d; } },
+  set(k, v){ try { localStorage.setItem('llt.' + k, v); } catch (_) {} },
+  del(k){ try { localStorage.removeItem('llt.' + k); } catch (_) {} },
+};
+
+/* ---------- API 设置 ---------- */
+const DEFAULT_MODEL = { openai: 'gpt-6-sol', claude: 'claude-sonnet-5', free: '' };
+const cfg = {
+  openaiKey: store.get('openaiKey', ''),
+  claudeKey: store.get('claudeKey', ''),
+  trEngine: store.get('trEngine', 'openai'),
+  trModel: store.get('trModel', ''),
+  topic: store.get('topic', ''),
+  keywords: store.get('keywords', ''),
+  remember: store.get('remember', '1') === '1',
+};
+function modelFor(engine){ return (cfg.trEngine === engine && cfg.trModel) ? cfg.trModel : DEFAULT_MODEL[engine]; }
+
+function syncDlgVisibility(){
+  const e = $('trEngine').value;
+  $('claudeKeyField').hidden = e !== 'claude';
+  $('trModel').disabled = e === 'free';
+  $('trModel').placeholder = DEFAULT_MODEL[e] || '（不需要）';
+}
+$('trEngine').onchange = () => { $('trModel').value = ''; syncDlgVisibility(); };
+
+function openSettings(){
+  $('openaiKey').value = cfg.openaiKey;
+  $('claudeKey').value = cfg.claudeKey;
+  $('trEngine').value = cfg.trEngine;
+  $('trModel').value = cfg.trModel;
+  $('topic').value = cfg.topic;
+  $('keywords').value = cfg.keywords;
+  $('remember').checked = cfg.remember;
+  syncDlgVisibility();
+  $('apiDlg').showModal();
+}
+$('apiDlg').addEventListener('close', () => {
+  if ($('apiDlg').returnValue !== 'save') return;
+  cfg.openaiKey = $('openaiKey').value.trim();
+  cfg.claudeKey = $('claudeKey').value.trim();
+  cfg.trEngine = $('trEngine').value;
+  cfg.trModel = $('trModel').value.trim();
+  cfg.topic = $('topic').value.trim();
+  cfg.keywords = $('keywords').value.trim();
+  cfg.remember = $('remember').checked;
+  const keys = ['openaiKey','claudeKey','trEngine','trModel','topic','keywords'];
+  if (cfg.remember) keys.forEach(k => store.set(k, cfg[k]));
+  else keys.forEach(k => store.del(k));
+  store.set('remember', cfg.remember ? '1' : '0');
+  if (!running) setStatus(cfg.openaiKey ? 'API 设置已保存' : '未开始');
+});
+$('settingsBtn').onclick = openSettings;
+
+function applyMode(){
+  const api = mode() === 'api';
+  document.querySelectorAll('.free-only').forEach(el => el.hidden = api);
+  document.querySelectorAll('.api-only').forEach(el => el.hidden = !api);
+  store.set('mode', mode());
+}
+$('mode').value = store.get('mode', 'free') === 'api' ? 'api' : 'free';
+$('accent').value = store.get('accent', 'en-US');
+applyMode();
+$('mode').onchange = () => {
+  if (running) stop();
+  applyMode();
+  if (mode() === 'api' && !cfg.openaiKey) openSettings();
+};
+$('accent').onchange = () => {
+  store.set('accent', $('accent').value);
+  if (running && mode() === 'free') { freeRec?.abort(); freeRec = null; startFreeRecognizer(); }
+};
+
+/* ---------- 免费翻译 ---------- */
 async function setupTranslator(){
-  const want = $('engine').value;
+  const want = mode() === 'api' ? 'auto' : $('engine').value;
   if (want === 'google') { translator = null; return 'google'; }
   if (translator) return 'chrome';
   if (!('Translator' in self)) {
@@ -129,7 +281,7 @@ async function setupTranslator(){
   }
 }
 
-async function translate(text){
+async function translateFree(text){
   if (!text.trim()) return '';
   if (translator) {
     try { return await translator.translate(text); }
@@ -142,6 +294,68 @@ async function translate(text){
   return j[0].map(x => x[0]).join('');
 }
 
+/* ---------- 大模型翻译（带上下文） ---------- */
+function buildPrompt(obj){
+  const idx = lines.indexOf(obj);
+  const prev = lines.slice(Math.max(0, (idx < 0 ? lines.length : idx) - 4), idx < 0 ? lines.length : idx)
+    .filter(l => l.en && l.zh);
+  const system =
+    '你是大学课堂的同声传译。把老师刚说的一句英语翻成自然、准确的简体中文。\n' +
+    '要求：只输出译文，不要解释、不要引号；英文来自语音识别，可能有错字或断句不完整，请按上下文推断老师的本意来翻；' +
+    '专业术语译法要准确并前后一致，不常见的术语可在中文后用括号保留英文；人名保留英文。' +
+    (cfg.topic ? '\n这门课：' + cfg.topic : '') +
+    (cfg.keywords ? '\n课程常用词：' + cfg.keywords : '');
+  let user = '';
+  if (prev.length) user += '前文（仅供参考，不要翻译）：\n' + prev.map(l => l.en + '\n→ ' + l.zh).join('\n') + '\n\n';
+  user += '要翻译的句子：\n' + obj.en;
+  return { system, user };
+}
+
+async function translateOpenAI(obj){
+  const { system, user } = buildPrompt(obj);
+  const r = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + cfg.openaiKey },
+    body: JSON.stringify({ model: modelFor('openai'), messages: [{ role: 'system', content: system }, { role: 'user', content: user }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || ('HTTP ' + r.status));
+  return (j.choices?.[0]?.message?.content || '').trim();
+}
+
+async function translateClaude(obj){
+  const { system, user } = buildPrompt(obj);
+  const r = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': cfg.claudeKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({ model: modelFor('claude'), max_tokens: 1024, system, messages: [{ role: 'user', content: user }] }),
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(j.error?.message || ('HTTP ' + r.status));
+  return (j.content || []).filter(c => c.type === 'text').map(c => c.text).join('').trim();
+}
+
+let llmWarned = false;
+async function translateFinal(obj){
+  if (mode() !== 'api' || cfg.trEngine === 'free') return translateFree(obj.en);
+  try {
+    if (cfg.trEngine === 'claude') {
+      if (!cfg.claudeKey) throw new Error('没有填 Claude API Key');
+      return await translateClaude(obj);
+    }
+    return await translateOpenAI(obj);
+  } catch (e) {
+    console.warn('大模型翻译失败，改用免费翻译', e);
+    if (!llmWarned) { llmWarned = true; setStatus('大模型翻译出错（' + e.message + '），暂时改用免费翻译', true); }
+    return translateFree(obj.en);
+  }
+}
+
 /* ---------- 字幕行 ---------- */
 function nearBottom(){ return stage.scrollHeight - stage.scrollTop - stage.clientHeight < 200; }
 function scrollDown(force){ if (force || nearBottom()) stage.scrollTop = stage.scrollHeight; }
@@ -152,7 +366,7 @@ function makeLine(){
   el.className = 'line live';
   el.innerHTML = '<p class="zh"></p><p class="en"></p>';
   stage.appendChild(el);
-  return { el, en: '', zh: '', seq: 0, final: false };
+  return { el, en: '', zh: '', seq: 0, final: false, draftTimer: null };
 }
 
 function renderEn(obj){ obj.el.querySelector('.en').textContent = obj.en; }
@@ -161,48 +375,48 @@ async function fillZh(obj, draft){
   const my = ++obj.seq;
   const zhEl = obj.el.querySelector('.zh');
   try {
-    const zh = await translate(obj.en);
+    const zh = draft ? await translateFree(obj.en) : await translateFinal(obj);
     if (my !== obj.seq) return;          // 已有更新的翻译请求
     obj.zh = zh;
     zhEl.textContent = zh;
     zhEl.className = 'zh' + (draft ? ' draft' : '');
   } catch (e) {
     if (my !== obj.seq) return;
-    zhEl.textContent = '翻译失败：请检查网络，或在右上角换一个翻译引擎。';
+    if (draft) return;                   // 草稿失败不打扰，等正式翻译
+    zhEl.textContent = '翻译失败：请检查网络，或换一个翻译引擎。';
     zhEl.className = 'zh err';
   }
   scrollDown();
 }
 
-function onInterim(text){
+function updateLive(obj, text){
   const stick = nearBottom();
-  if (!current) current = makeLine();
-  current.en = text;
-  renderEn(current);
+  obj.en = text;
+  renderEn(obj);
   scrollDown(stick);
-  clearTimeout(draftTimer);
-  const obj = current;
-  draftTimer = setTimeout(() => { if (!obj.final) fillZh(obj, true); }, 600);
+  clearTimeout(obj.draftTimer);
+  obj.draftTimer = setTimeout(() => { if (!obj.final) fillZh(obj, true); }, 600);
 }
 
-function onFinal(text){
+function finalizeLine(obj, text){
   const stick = nearBottom();
-  const obj = current || makeLine();
-  current = null;
-  clearTimeout(draftTimer);
+  clearTimeout(obj.draftTimer);
   obj.en = text.trim();
   obj.final = true;
   obj.el.classList.remove('live');
+  if (!obj.en) { obj.el.remove(); return; }
   renderEn(obj);
   lines.push(obj);
   fillZh(obj, false);
   scrollDown(stick);
 }
 
-/* ---------- 语音识别 ---------- */
-function buildRecognizer(){
+/* ================= 免费版：浏览器语音识别 ================= */
+let freeRec = null, freeCurrent = null;
+
+function startFreeRecognizer(){
   const r = new SR();
-  r.lang = 'en-US';
+  r.lang = $('accent').value;
   r.continuous = true;
   r.interimResults = true;
   r.maxAlternatives = 1;
@@ -211,10 +425,11 @@ function buildRecognizer(){
     let interim = '';
     for (let i = e.resultIndex; i < e.results.length; i++) {
       const t = e.results[i][0].transcript;
-      if (e.results[i].isFinal) { if (t.trim()) onFinal(t); }
-      else interim += t;
+      if (e.results[i].isFinal) {
+        if (t.trim()) { const obj = freeCurrent || makeLine(); freeCurrent = null; finalizeLine(obj, t); }
+      } else interim += t;
     }
-    if (interim.trim()) onInterim(interim);
+    if (interim.trim()) { if (!freeCurrent) freeCurrent = makeLine(); updateLive(freeCurrent, interim); }
   };
 
   r.onerror = e => {
@@ -226,7 +441,7 @@ function buildRecognizer(){
       setStatus('语音识别连不上网络（Chrome 的识别需要联网），正在重试…', true);
     } else if (e.error === 'audio-capture') {
       stop();
-      setStatus('找不到麦克风：检查麦克风是否插好，或在 Windows 声音设置里设为默认设备。');
+      setStatus('找不到麦克风：检查麦克风是否插好，或在系统声音设置里设为默认设备。');
     } else {
       setStatus('识别出错：' + e.error + '，正在重试…', true);
     }
@@ -234,31 +449,338 @@ function buildRecognizer(){
 
   // Chrome 会在静音或约一分钟后自动停止，这里自动续上
   r.onend = () => {
-    if (!running) return;
-    if (current && current.en) onFinal(current.en);
-    setTimeout(() => { if (running) { try { r.start(); } catch (_) {} } }, 250);
+    if (!running || mode() !== 'free' || freeRec !== r) return;
+    if (freeCurrent && freeCurrent.en) { const obj = freeCurrent; freeCurrent = null; finalizeLine(obj, obj.en); }
+    setTimeout(() => { if (running && freeRec === r) { try { r.start(); } catch (_) {} } }, 250);
   };
-  return r;
+  freeRec = r;
+  try { r.start(); } catch (_) {}
 }
 
-async function start(){
-  if (!SR) { alert('这个浏览器不支持语音识别，请用 Chrome 或 Edge 打开。'); return; }
-  setStatus('准备中…');
+async function startFree(){
+  if (!SR) { alert('这个浏览器不支持语音识别，请用 Chrome 或 Edge 打开，或者切换到“API 版”。'); return false; }
   engineUsed = await setupTranslator();
-  rec = rec || buildRecognizer();
   running = true;
-  try { rec.start(); } catch (_) {}
+  startFreeRecognizer();
+  setStatus('正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线'), true);
+  return true;
+}
+
+function stopFree(){
+  const r = freeRec; freeRec = null;
+  try { r && r.stop(); } catch (_) {}
+  if (freeCurrent && freeCurrent.en) { const obj = freeCurrent; freeCurrent = null; finalizeLine(obj, obj.en); }
+  freeCurrent = null;
+}
+
+/* ================= API 版：OpenAI 实时转写 ================= */
+const RT_URL = 'wss://api.openai.com/v1/realtime?intent=transcription';
+const RT_MODEL = 'gpt-live-transcribe';
+const CHUNK_MS = 100;                  // 每 100ms 发一次音频
+const SESSION_MAX_MS = 55 * 60 * 1000; // 官方单次会话上限 60 分钟，提前换新连接
+
+let api = null; // 当前 API 会话的所有状态
+
+const WORKLET = `
+class PcmCapture extends AudioWorkletProcessor {
+  constructor(){ super(); this.size = ${24000 * CHUNK_MS / 1000}; this.buf = new Int16Array(this.size); this.n = 0; this.sum = 0; }
+  process(inputs){
+    const ch = inputs[0] && inputs[0][0];
+    if (!ch) return true;
+    for (let i = 0; i < ch.length; i++) {
+      const s = Math.max(-1, Math.min(1, ch[i]));
+      this.sum += s * s;
+      this.buf[this.n++] = s < 0 ? s * 0x8000 : s * 0x7fff;
+      if (this.n === this.size) {
+        const rms = Math.sqrt(this.sum / this.n);
+        this.port.postMessage({ pcm: this.buf.buffer, rms }, [this.buf.buffer]);
+        this.buf = new Int16Array(this.size); this.n = 0; this.sum = 0;
+      }
+    }
+    return true;
+  }
+}
+registerProcessor('pcm-capture', PcmCapture);`;
+
+function b64(buf){
+  const u8 = new Uint8Array(buf); let s = '';
+  for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+function sessionConfig(){
+  const transcription = { model: RT_MODEL, languages: ['en'], delay: 'low' };
+  const kw = cfg.keywords.split(/[,，;；\n]/).map(s => s.trim().replace(/[<>\r\n]/g, '')).filter(Boolean).slice(0, 100);
+  if (kw.length) transcription.keywords = kw;
+  transcription.prompt = 'A live university lecture in English' + (cfg.topic ? ' — course: ' + cfg.topic.replace(/[<>\r\n]/g, ' ') : '') + '.';
+  return {
+    type: 'session.update',
+    session: {
+      type: 'transcription',
+      audio: {
+        input: {
+          format: { type: 'audio/pcm', rate: 24000 },
+          noise_reduction: { type: 'far_field' },
+          transcription,
+          turn_detection: null,
+        },
+      },
+    },
+  };
+}
+
+function openSocket(){
+  return new Promise((resolve, reject) => {
+    let ws;
+    try {
+      ws = new WebSocket(RT_URL, ['realtime', 'openai-insecure-api-key.' + cfg.openaiKey]);
+    } catch (e) { reject(e); return; }
+    const sock = { ws, items: new Map(), ready: false, openedAt: Date.now() };
+    const t = setTimeout(() => { try { ws.close(); } catch (_) {} reject(new Error('连接超时')); }, 12000);
+    ws.onopen = () => {
+      clearTimeout(t);
+      ws.send(JSON.stringify(sessionConfig()));
+      sock.ready = true;
+      resolve(sock);
+    };
+    ws.onerror = () => { clearTimeout(t); reject(new Error('连接失败')); };
+    ws.onmessage = ev => onRtEvent(sock, ev);
+    ws.onclose = ev => onRtClose(sock, ev);
+  });
+}
+
+function lineFor(sock, id){
+  let obj = sock.items.get(id);
+  if (!obj) { obj = makeLine(); obj.text = ''; sock.items.set(id, obj); }
+  return obj;
+}
+
+function onRtEvent(sock, ev){
+  let m; try { m = JSON.parse(ev.data); } catch (_) { return; }
+  switch (m.type) {
+    case 'conversation.item.input_audio_transcription.delta': {
+      if (!m.delta) break;
+      const obj = lineFor(sock, m.item_id);
+      if (obj.final) break;
+      obj.text += m.delta;
+      if (obj.text.trim()) updateLive(obj, obj.text.trim());
+      break;
+    }
+    case 'conversation.item.input_audio_transcription.completed': {
+      const obj = lineFor(sock, m.item_id);
+      if (obj.final) break;
+      finalizeLine(obj, m.transcript ?? obj.text);
+      break;
+    }
+    case 'conversation.item.input_audio_transcription.failed':
+      console.warn('转写失败', m);
+      break;
+    case 'error': {
+      const msg = m.error?.message || '未知错误';
+      console.warn('Realtime error', m);
+      const code = m.error?.code || '';
+      if (/api.?key|auth|unauthori|permission|quota|billing|insufficient/i.test(msg + ' ' + code)) {
+        stop();
+        setStatus('OpenAI 报错：' + msg + '（检查 API Key 和账户余额）');
+      } else if (!/buffer.*(empty|too small)|commit/i.test(msg)) {
+        setStatus('OpenAI 报错：' + msg, true);
+      }
+      break;
+    }
+  }
+}
+
+function onRtClose(sock, ev){
+  if (!api || api.sock !== sock) return;            // 旧连接关闭，不用管
+  if (!running) return;
+  console.warn('Realtime 连接断开', ev.code, ev.reason);
+  if (ev.code === 1008 || /key|auth/i.test(ev.reason || '')) {
+    stop();
+    setStatus('OpenAI 拒绝连接：请检查 API Key 是否正确、账户是否有余额。');
+    return;
+  }
+  reconnect('连接断开，正在重连…');
+}
+
+async function reconnect(msg){
+  if (!api || api.reconnecting) return;
+  api.reconnecting = true;
+  setStatus(msg, true);
+  const old = api.sock;
+  api.sock = null;                                  // 期间的音频先存进队列
+  for (let attempt = 0; running && api; attempt++) {
+    try {
+      const sock = await openSocket();
+      if (!running || !api) { try { sock.ws.close(); } catch (_) {} return; }
+      api.sock = sock;
+      for (const b of api.queue) sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b }));
+      api.segMs = api.queue.length * CHUNK_MS;
+      api.queue = [];
+      api.reconnecting = false;
+      if (old && old.ws.readyState === WebSocket.OPEN) setTimeout(() => { try { old.ws.close(); } catch (_) {} }, 8000);
+      setStatus(apiStatusText(), true);
+      return;
+    } catch (e) {
+      await new Promise(r => setTimeout(r, Math.min(8000, 1000 * 2 ** attempt)));
+    }
+  }
+}
+
+/* 自己判断“一句话说完了”：静音一小段就提交，说太久也强制提交 */
+function onAudioChunk(pcm, rms){
+  if (!api) return;
+  api.totalMs += CHUNK_MS;
+  api.noise = rms < api.noise ? rms : api.noise * 0.995 + rms * 0.005;
+  const speaking = rms > Math.max(0.008, api.noise * 2.5);
+
+  const audio = b64(pcm);
+  const sock = api.sock;
+  if (!sock || sock.ws.readyState !== WebSocket.OPEN) {
+    api.queue.push(audio);
+    if (api.queue.length > 300) api.queue.shift();  // 最多缓存 30 秒
+    return;
+  }
+  sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio }));
+  api.segMs += CHUNK_MS;
+  if (speaking) { api.speechMs += CHUNK_MS; api.silenceMs = 0; }
+  else api.silenceMs += CHUNK_MS;
+
+  const pause = api.speechMs >= 400 && api.silenceMs >= 600;
+  const longAndQuiet = api.segMs >= 12000 && !speaking;
+  const tooLong = api.segMs >= 20000;
+  if (pause || longAndQuiet || tooLong) commit();
+  else if (api.speechMs === 0 && api.segMs >= 15000) {   // 长时间没人说话，丢掉这段静音
+    sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
+    api.segMs = 0; api.silenceMs = 0;
+  }
+
+  if (Date.now() - sock.openedAt > SESSION_MAX_MS && !api.reconnecting && pause) {
+    reconnect('正在无缝续接新会话…');
+  }
+  if (api.totalMs % 5000 === 0) updateCost();
+}
+
+function commit(){
+  const sock = api?.sock;
+  if (sock && sock.ws.readyState === WebSocket.OPEN && api.segMs > 0) {
+    sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
+  }
+  api.segMs = 0; api.speechMs = 0; api.silenceMs = 0;
+}
+
+function apiStatusText(){
+  const tr = cfg.trEngine === 'claude' ? 'Claude' : cfg.trEngine === 'openai' ? 'GPT' : '免费翻译';
+  return '正在听 · API 版 · 翻译：' + tr;
+}
+function updateCost(){
+  if (!api) return;
+  const min = api.totalMs / 60000;
+  $('costBadge').hidden = false;
+  $('costBadge').textContent = `${min < 10 ? min.toFixed(1) : min.toFixed(0)} 分钟 · 识别约 $${(min * 0.017).toFixed(2)}`;
+}
+
+async function startApi(){
+  if (!cfg.openaiKey) { openSettings(); return false; }
+  if (!window.AudioWorkletNode || !navigator.mediaDevices?.getUserMedia) {
+    alert('这个浏览器太旧了，请用最新版 Chrome 或 Edge。'); return false;
+  }
+  if (cfg.trEngine === 'free') engineUsed = await setupTranslator();
+  else setupTranslator();                          // 草稿翻译用，后台准备
+  let stream;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+  } catch (e) {
+    setStatus(e.name === 'NotAllowedError'
+      ? '麦克风被拒绝：点地址栏左边的图标，把麦克风改成“允许”，再点开始。'
+      : '打不开麦克风：' + e.message);
+    return false;
+  }
+
+  const ctx = new AudioContext({ sampleRate: 24000 });
+  try {
+    // 用 data: 地址加载，本地双击打开 html 文件时也能用
+    await ctx.audioWorklet.addModule('data:application/javascript;base64,' + btoa(unescape(encodeURIComponent(WORKLET))));
+  } catch (e) {
+    stream.getTracks().forEach(t => t.stop()); ctx.close();
+    setStatus('音频处理模块加载失败：' + e.message);
+    return false;
+  }
+  const src = ctx.createMediaStreamSource(stream);
+  const node = new AudioWorkletNode(ctx, 'pcm-capture');
+  const mute = ctx.createGain(); mute.gain.value = 0;
+  src.connect(node); node.connect(mute); mute.connect(ctx.destination);
+
+  api = { stream, ctx, node, sock: null, queue: [], segMs: 0, speechMs: 0, silenceMs: 0,
+          noise: 0.01, totalMs: 0, reconnecting: false };
+  node.port.onmessage = e => onAudioChunk(e.data.pcm, e.data.rms);
+  running = true;
+  llmWarned = false;
+
+  setStatus('正在连接 OpenAI…', true);
+  try {
+    api.sock = await openSocket();
+    for (const b of api.queue) api.sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio: b }));
+    api.queue = [];
+  } catch (e) {
+    stopApi();
+    running = false;
+    setStatus('连不上 OpenAI（' + e.message + '）：检查网络、API Key 和账户余额。');
+    return false;
+  }
+  setStatus(apiStatusText(), true);
+  updateCost();
+  return true;
+}
+
+function stopApi(){
+  if (!api) return;
+  const a = api;
+  if (a.sock && a.sock.ws.readyState === WebSocket.OPEN && a.segMs > 0) {
+    try { a.sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' })); } catch (_) {}
+  }
+  const sock = a.sock;
+  api = null;
+  updateCostFinal(a);
+  try { a.node.port.onmessage = null; a.node.disconnect(); } catch (_) {}
+  try { a.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
+  try { a.ctx.close(); } catch (_) {}
+  // 等最后一句的识别结果回来再断开
+  if (sock) {
+    sock.ws.onclose = null;
+    setTimeout(() => {
+      try { sock.ws.close(); } catch (_) {}
+      for (const obj of sock.items.values()) if (!obj.final) finalizeLine(obj, obj.text || '');
+    }, 4000);
+  }
+}
+function updateCostFinal(a){
+  const min = a.totalMs / 60000;
+  if (min > 0) { $('costBadge').hidden = false; $('costBadge').textContent = `本次 ${min.toFixed(1)} 分钟 · 识别约 $${(min * 0.017).toFixed(2)}`; }
+}
+
+/* ---------- 开始 / 停止 ---------- */
+async function start(){
+  $('toggle').disabled = true;
+  setStatus('准备中…');
+  let ok = false;
+  try { ok = mode() === 'api' ? await startApi() : await startFree(); }
+  catch (e) { console.error(e); stop(); setStatus('启动失败：' + e.message); }
+  $('toggle').disabled = false;
+  if (!ok) return;
   $('toggle').textContent = '停止';
   $('toggle').classList.add('stop');
-  setStatus('正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线'), true);
   try { wakeLock = await navigator.wakeLock?.request('screen'); } catch (_) {}
 }
 
 function stop(){
   running = false;
-  try { rec && rec.stop(); } catch (_) {}
+  stopFree();
+  stopApi();
   $('toggle').textContent = '开始';
   $('toggle').classList.remove('stop');
+  $('toggle').disabled = false;
   setStatus('已停止');
   try { wakeLock && wakeLock.release(); } catch (_) {}
   wakeLock = null;
@@ -268,7 +790,7 @@ $('toggle').onclick = () => running ? stop() : start();
 
 $('engine').onchange = async () => {
   translator = $('engine').value === 'google' ? null : translator;
-  if (running) {
+  if (running && mode() === 'free') {
     engineUsed = await setupTranslator();
     setStatus('正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线'), true);
   }
@@ -321,7 +843,8 @@ $('exportBtn').onclick = () => {
 $('clearBtn').onclick = () => {
   if (lines.length && !confirm('清空所有字幕？没导出的内容会丢失。')) return;
   lines.length = 0;
-  current = null;
+  freeCurrent = null;
+  if (api?.sock) api.sock.items.clear();
   stage.querySelectorAll('.line').forEach(el => el.remove());
 };
 
