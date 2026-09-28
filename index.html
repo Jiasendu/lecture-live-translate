@@ -160,6 +160,18 @@ body.pip .empty ul{display:none}
       <input type="password" id="claudeKey" autocomplete="off" spellcheck="false" placeholder="sk-ant-...">
     </label>
 
+    <label class="field"><span>老师的口音（口音重时一定要选，识别会准很多）</span>
+      <select id="accentApi">
+        <option value="">不确定 / 标准口音</option>
+        <option value="sg">新加坡口音（Singlish）</option>
+        <option value="in">印度口音</option>
+        <option value="cn">中国口音</option>
+        <option value="my">马来西亚口音</option>
+        <option value="uk">英式口音</option>
+        <option value="de">德国口音</option>
+      </select>
+    </label>
+
     <label class="field"><span>这门课是讲什么的（可选，帮助识别和翻译）</span>
       <input type="text" id="topic" placeholder="例如：Introduction to Sociology，社会学导论">
     </label>
@@ -215,6 +227,7 @@ const cfg = {
   trEngine: store.get('trEngine', 'openai'),
   trModel: store.get('trModel', ''),
   topic: store.get('topic', ''),
+  accent: store.get('accentApi', ''),
   keywords: store.get('keywords', ''),
   remember: store.get('remember', '1') === '1',
 };
@@ -244,6 +257,7 @@ function openSettings(){
   $('trEngine').value = cfg.trEngine;
   fillModelOptions(cfg.trEngine, cfg.trModel);
   $('topic').value = cfg.topic;
+  $('accentApi').value = cfg.accent;
   $('keywords').value = cfg.keywords;
   $('remember').checked = cfg.remember;
   syncDlgVisibility();
@@ -258,14 +272,17 @@ $('apiDlg').addEventListener('close', () => {
   cfg.trEngine = $('trEngine').value;
   cfg.trModel = $('trModel').value;
   cfg.topic = $('topic').value.trim();
+  const accentChanged = cfg.accent !== $('accentApi').value;
+  cfg.accent = $('accentApi').value;
   cfg.keywords = $('keywords').value.trim();
   cfg.remember = $('remember').checked;
   const keys = ['openaiKey','claudeKey','sttModel','trEngine','trModel','topic','keywords'];
+  store.set('accentApi', cfg.accent);
   if (cfg.remember) keys.forEach(k => store.set(k, cfg[k]));
   else keys.forEach(k => store.del(k));
   store.set('remember', cfg.remember ? '1' : '0');
   if (running && mode() === 'api') {
-    if (sttChanged) { commit(); api.sttModel = cfg.sttModel; reconnect('正在切换识别模型…'); }
+    if (sttChanged || accentChanged) { commit(); api.sttModel = cfg.sttModel; reconnect('正在应用新设置…'); }
     else setStatus(apiStatusText(), true);
   } else setStatus(cfg.openaiKey ? 'API 设置已保存' : '未开始');
 });
@@ -327,6 +344,21 @@ async function translateFree(text){
   return j[0].map(x => x[0]).join('');
 }
 
+/* ---------- 口音提示 ---------- */
+const ACCENTS = {
+  sg: { en: 'The lecturer is Singaporean and speaks with a strong Singaporean English (Singlish) accent: syllable-timed rhythm, dropped or unreleased final consonants, "th" often pronounced as "t" or "d", merged vowel lengths, and particles such as "lah", "leh", "lor", "hor", "can or not". Transcribe the intended words in standard English spelling.',
+        zh: '老师是新加坡人，口音很重（Singlish）：词尾辅音常被吞掉、th 发成 t/d、长短元音不分，还会夹杂 lah、leh、lor、can or not 等语气词。' },
+  in: { en: 'The lecturer speaks with a strong Indian English accent (retroflex consonants, "v"/"w" merger, syllable-timed rhythm). Transcribe the intended words in standard English spelling.',
+        zh: '老师是印度口音：v/w 不分、卷舌音重、节奏平。' },
+  cn: { en: 'The lecturer is a Mandarin Chinese native speaker speaking English with a Chinese accent (final consonants often dropped, "th" as "s"/"z", l/n and r/l confusion). Transcribe the intended words in standard English spelling.',
+        zh: '老师是中国口音英语：词尾辅音常丢、th 发成 s/z、l/n 或 r/l 不分。' },
+  my: { en: 'The lecturer speaks Malaysian English with a strong local accent (dropped final consonants, syllable-timed rhythm, particles like "lah"). Transcribe the intended words in standard English spelling.',
+        zh: '老师是马来西亚口音英语：词尾辅音常丢，会夹杂 lah 等语气词。' },
+  uk: { en: 'The lecturer speaks British English. Use the intended words.', zh: '老师是英式口音。' },
+  de: { en: 'The lecturer is a German native speaker speaking English with a German accent ("w" as "v", "th" as "s"/"z", final devoicing). Transcribe the intended words in standard English spelling.',
+        zh: '老师是德国口音英语：w 发成 v、th 发成 s/z、词尾浊辅音清化。' },
+};
+
 /* ---------- 大模型翻译（带上下文） ---------- */
 function buildPrompt(obj){
   const idx = lines.indexOf(obj);
@@ -337,6 +369,7 @@ function buildPrompt(obj){
     '要求：只输出译文，不要解释、不要引号；英文来自语音识别，可能有错字、断句不完整或句号加错的地方，请按上下文推断老师的本意，翻成连贯的中文，不要逐个短语生硬拼接；' +
     '专业术语译法要准确并前后一致，不常见的术语可在中文后用括号保留英文；人名保留英文。' +
     (cfg.topic ? '\n这门课：' + cfg.topic : '') +
+    (ACCENTS[cfg.accent] ? '\n' + ACCENTS[cfg.accent].zh + '语音识别容易把发音相近的词认错，请结合上下文和课程常用词，推断出老师真正说的词再翻译。' : '') +
     (cfg.keywords ? '\n课程常用词：' + cfg.keywords : '');
   let user = '';
   if (prev.length) user += '前文（仅供参考，不要翻译）：\n' + prev.map(l => l.en + '\n→ ' + l.zh).join('\n') + '\n\n';
@@ -563,10 +596,11 @@ function b64(buf){
 
 function sessionConfig(){
   const kw = cfg.keywords.split(/[,，;；\n]/).map(s => s.trim().replace(/[<>\r\n]/g, '')).filter(Boolean).slice(0, 100);
-  const prompt = 'A live university lecture in English' + (cfg.topic ? ' — course: ' + cfg.topic.replace(/[<>\r\n]/g, ' ') : '') + '.';
+  const prompt = ('A live university lecture in English' + (cfg.topic ? ' — course: ' + cfg.topic.replace(/[<>\r\n]/g, ' ') : '') + '.' +
+    (ACCENTS[cfg.accent] ? ' ' + ACCENTS[cfg.accent].en : '')).replace(/[<>\r\n]/g, ' ');
   let transcription;
   if (cfg.sttModel === 'gpt-live-transcribe') {
-    transcription = { model: cfg.sttModel, languages: ['en'], delay: 'low', prompt };
+    transcription = { model: cfg.sttModel, languages: ['en'], delay: cfg.accent && cfg.accent !== 'uk' ? 'medium' : 'low', prompt };
     if (kw.length) transcription.keywords = kw;
   } else {
     // 非流式模型：一段说完（提交）后才返回结果；专业词写进 prompt
@@ -747,7 +781,7 @@ function onAudioChunk(pcm, rms){
   cost.sttMs += CHUNK_MS;
   cost.sttUsd += (STT_PRICE[api.sttModel] || 0) * CHUNK_MS / 60000;
   api.noise = rms < api.noise ? rms : api.noise * 0.995 + rms * 0.005;
-  const speaking = rms > Math.max(0.008, api.noise * 2.5);
+  const speaking = rms > Math.max(0.004, api.noise * 2.5);
 
   const audio = b64(pcm);
   const sock = api.sock;
@@ -761,7 +795,8 @@ function onAudioChunk(pcm, rms){
   if (speaking) { api.speechMs += CHUNK_MS; api.silenceMs = 0; }
   else api.silenceMs += CHUNK_MS;
 
-  const pause = api.speechMs >= 600 && api.silenceMs >= 800;
+  const minSeg = api.sttModel === 'gpt-live-transcribe' ? 0 : 3000;   // 非实时模型：每段至少 3 秒，给模型更多上下文
+  const pause = api.speechMs >= 600 && api.silenceMs >= 800 && api.segMs >= minSeg;
   const longAndQuiet = api.segMs >= 12000 && !speaking;
   const tooLong = api.segMs >= 20000;
   if (pause || longAndQuiet || tooLong) commit();

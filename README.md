@@ -39,7 +39,7 @@
 1. 到 [platform.openai.com](https://platform.openai.com/api-keys) 充值并创建一个 API key（ChatGPT 会员不包含 API，需要单独付费）
 2. 右上角把“免费版”切到 **API 版**，在弹出的设置里填入 key
 3. 翻译可以选 GPT（用同一个 key）、Claude（需要 [Claude API key](https://console.anthropic.com/settings/keys)）或者免费翻译
-4. 可选：填上课程主题和专业词、人名，识别和翻译会更准
+4. 可选：选择老师的口音（新加坡、印度、中国等），填上课程主题和专业词、人名，识别和翻译会更准
 
 **费用**（按官方价格估算，以账单为准，一节 90 分钟的课）：
 
