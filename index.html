@@ -24,6 +24,8 @@ body{background:var(--bg);color:var(--ink);font-family:var(--cjk);display:flex;f
 header{display:flex;flex-wrap:wrap;align-items:center;gap:10px 14px;padding:12px 18px;border-bottom:1px solid var(--line);background:var(--panel)}
 h1{font-size:18px;font-weight:600;margin:0 8px 0 0;letter-spacing:.02em}
 .status{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--muted);margin-right:auto;min-width:0}
+.meter{width:44px;height:6px;border-radius:3px;background:var(--line);overflow:hidden;flex:none}
+.meter i{display:block;height:100%;width:0;background:var(--ok);transition:width .1s}
 .dot{width:10px;height:10px;border-radius:50%;background:var(--muted);flex:none}
 .dot.on{background:var(--rec);box-shadow:0 0 0 0 rgba(229,72,77,.6);animation:pulse 1.6s infinite}
 @keyframes pulse{70%{box-shadow:0 0 0 8px rgba(229,72,77,0)}100%{box-shadow:0 0 0 0 rgba(229,72,77,0)}}
@@ -84,7 +86,7 @@ body.pip .empty ul{display:none}
 <body>
 <header>
   <h1>课堂同传</h1>
-  <div class="status"><span class="dot" id="dot"></span><span id="status">未开始</span><span class="badge" id="costBadge" hidden></span></div>
+  <div class="status"><span class="dot" id="dot"></span><span class="meter" id="meter" hidden title="麦克风音量：说话时应该会跳动"><i id="meterBar"></i></span><span id="status">未开始</span><span class="badge" id="costBadge" hidden></span></div>
   <select id="mode" title="识别模式">
     <option value="free">免费版</option>
     <option value="api">API 版（更准）</option>
@@ -104,6 +106,7 @@ body.pip .empty ul{display:none}
     <option value="auto">翻译：自动</option>
     <option value="chrome">Chrome 内置（离线）</option>
     <option value="google">Google 在线</option>
+    <option value="llm">GPT / Claude（用 API 设置里的 Key）</option>
   </select>
   <button id="settingsBtn" class="api-only" hidden>API 设置</button>
   <button id="exportBtn">导出文本</button>
@@ -309,7 +312,7 @@ $('accent').onchange = () => {
 
 /* ---------- 免费翻译 ---------- */
 async function setupTranslator(){
-  const want = mode() === 'api' ? 'auto' : $('engine').value;
+  const want = (mode() === 'api' || $('engine').value === 'llm') ? 'auto' : $('engine').value;
   if (want === 'google') { translator = null; return 'google'; }
   if (translator) return 'chrome';
   if (!('Translator' in self)) {
@@ -428,7 +431,8 @@ function updateCost(final){
 
 let llmWarned = false;
 async function translateFinal(obj){
-  if (mode() !== 'api' || cfg.trEngine === 'free') return translateFree(obj.en);
+  const useLlm = mode() === 'api' || $('engine').value === 'llm';
+  if (!useLlm || cfg.trEngine === 'free' || !cfg.openaiKey && cfg.trEngine === 'openai') return translateFree(obj.en);
   try {
     if (cfg.trEngine === 'claude') {
       if (!cfg.claudeKey) throw new Error('没有填 Claude API Key');
@@ -549,7 +553,7 @@ async function startFree(){
   engineUsed = await setupTranslator();
   running = true;
   startFreeRecognizer();
-  setStatus('正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线'), true);
+  setStatus(freeStatusText(), true);
   return true;
 }
 
@@ -780,8 +784,10 @@ function onAudioChunk(pcm, rms){
   api.totalMs += CHUNK_MS;
   cost.sttMs += CHUNK_MS;
   cost.sttUsd += (STT_PRICE[api.sttModel] || 0) * CHUNK_MS / 60000;
-  api.noise = rms < api.noise ? rms : api.noise * 0.995 + rms * 0.005;
-  const speaking = rms > Math.max(0.004, api.noise * 2.5);
+  // 相对能量判断停顿：和最近 3 秒的平均音量比，明显变小就算停顿（教室有背景噪音也能用）
+  api.avg = api.avg * 0.967 + rms * 0.033;
+  const quiet = rms < api.avg * 0.55 || rms < 0.002;
+  showLevel(rms);
 
   const audio = b64(pcm);
   const sock = api.sock;
@@ -792,31 +798,31 @@ function onAudioChunk(pcm, rms){
   }
   sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.append', audio }));
   api.segMs += CHUNK_MS;
-  if (speaking) { api.speechMs += CHUNK_MS; api.silenceMs = 0; }
-  else api.silenceMs += CHUNK_MS;
+  api.quietMs = quiet ? api.quietMs + CHUNK_MS : 0;
 
-  const minSeg = api.sttModel === 'gpt-live-transcribe' ? 0 : 3000;   // 非实时模型：每段至少 3 秒，给模型更多上下文
-  const pause = api.speechMs >= 600 && api.silenceMs >= 800 && api.segMs >= minSeg;
-  const longAndQuiet = api.segMs >= 12000 && !speaking;
-  const tooLong = api.segMs >= 20000;
-  if (pause || longAndQuiet || tooLong) commit();
-  else if (api.speechMs === 0 && api.segMs >= 15000) {   // 长时间没人说话，丢掉这段静音
-    sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.clear' }));
-    api.segMs = 0; api.silenceMs = 0;
-  }
+  const live = api.sttModel === 'gpt-live-transcribe';
+  const minSeg = live ? 1500 : 2500;
+  const pause = api.segMs >= minSeg && api.quietMs >= 400;          // 说话中间的自然停顿
+  const fallback = api.segMs >= 6000 && api.quietMs >= 200;         // 老师一直说：6 秒后找个稍弱的地方切
+  const tooLong = api.segMs >= 10000;                               // 最长 10 秒，保证字幕不会一直不出来
+  if (pause || fallback || tooLong) commit();
 
-  if (Date.now() - sock.openedAt > SESSION_MAX_MS && !api.reconnecting && pause) {
+  if (Date.now() - sock.openedAt > SESSION_MAX_MS && !api.reconnecting && api.segMs === 0) {
     reconnect('正在无缝续接新会话…');
   }
   if (api.totalMs % 5000 === 0) updateCost();
 }
 
+function showLevel(rms){
+  const pct = Math.min(100, Math.round(Math.sqrt(rms / 0.25) * 100));
+  $('meterBar').style.width = pct + '%';
+}
 function commit(){
   const sock = api?.sock;
   if (sock && sock.ws.readyState === WebSocket.OPEN && api.segMs > 0) {
     sock.ws.send(JSON.stringify({ type: 'input_audio_buffer.commit' }));
   }
-  api.segMs = 0; api.speechMs = 0; api.silenceMs = 0;
+  api.segMs = 0; api.quietMs = 0;
 }
 
 function apiStatusText(){
@@ -835,7 +841,7 @@ async function startApi(){
   let stream;
   try {
     stream = await navigator.mediaDevices.getUserMedia({
-      audio: { channelCount: 1, echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: { channelCount: 1, echoCancellation: false, noiseSuppression: false, autoGainControl: true },  // 浏览器降噪会把远处老师的声音当噪音压掉，交给 OpenAI 的远场降噪处理
     });
   } catch (e) {
     setStatus(e.name === 'NotAllowedError'
@@ -858,10 +864,11 @@ async function startApi(){
   const mute = ctx.createGain(); mute.gain.value = 0;
   src.connect(node); node.connect(mute); mute.connect(ctx.destination);
 
-  api = { stream, ctx, node, sock: null, queue: [], segMs: 0, speechMs: 0, silenceMs: 0,
-          noise: 0.01, totalMs: 0, reconnecting: false, sttModel: cfg.sttModel };
+  api = { stream, ctx, node, sock: null, queue: [], segMs: 0,
+          avg: 0.01, quietMs: 0, totalMs: 0, reconnecting: false, sttModel: cfg.sttModel };
   cost.sttMs = 0; cost.sttUsd = 0; cost.trUsd = 0;
   node.port.onmessage = e => onAudioChunk(e.data.pcm, e.data.rms);
+  $('meter').hidden = false;
   running = true;
   llmWarned = false;
 
@@ -889,6 +896,7 @@ function stopApi(){
   }
   const sock = a.sock;
   api = null;
+  $('meter').hidden = true;
   updateCost(true);
   try { a.node.port.onmessage = null; a.node.disconnect(); } catch (_) {}
   try { a.stream.getTracks().forEach(t => t.stop()); } catch (_) {}
@@ -931,11 +939,18 @@ function stop(){
 
 $('toggle').onclick = () => running ? stop() : start();
 
+function freeStatusText(){
+  if ($('engine').value === 'llm') return '正在听 · 翻译：' + (cfg.trEngine === 'claude' ? 'Claude' : 'GPT');
+  return '正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线');
+}
+$('engine').value = ['auto','chrome','google','llm'].includes(store.get('engine','auto')) ? store.get('engine','auto') : 'auto';
 $('engine').onchange = async () => {
+  store.set('engine', $('engine').value);
+  if ($('engine').value === 'llm' && !cfg.openaiKey && !cfg.claudeKey) openSettings();
   translator = $('engine').value === 'google' ? null : translator;
   if (running && mode() === 'free') {
     engineUsed = await setupTranslator();
-    setStatus('正在听 · 翻译：' + (engineUsed === 'chrome' ? 'Chrome 内置' : 'Google 在线'), true);
+    setStatus(freeStatusText(), true);
   }
 };
 
